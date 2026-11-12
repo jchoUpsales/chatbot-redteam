@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Chatbot sign-in test page</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;color:#222;background:#fafaf7;line-height:1.5}
+h1{font-size:22px}
+#status{font-size:20px;font-weight:600;padding:12px;border-radius:6px;background:#eee}
+#status.in{background:#d9f2dd}#status.out{background:#f6e0d6}
+#log{font:13px ui-monospace,monospace;white-space:pre-wrap;background:#fff;border:1px solid #ddd;padding:8px;min-height:120px}
+textarea{width:100%;height:60px}
+button{margin:4px 4px 4px 0}
+</style>
+<script>
+// Test page for an internal sign-in test (Upsales WEB-16798). No secrets here:
+// a short-lived test token arrives only via the URL fragment (#token=...) or the paste box.
+(function () {
+  var params = new URLSearchParams(location.hash.slice(1));
+  var token = params.get('token');
+  var sd = params.get('sd');
+  // Drop the fragment so a plain reload does NOT sign in again.
+  if (location.hash) history.replaceState(null, '', location.pathname);
+  window.__testLog = [];
+  function log(line) {
+    var t = new Date().toISOString().slice(11, 19);
+    window.__testLog.push(t + ' ' + line);
+    var el = document.getElementById('log');
+    if (el) el.textContent = window.__testLog.join('\n');
+  }
+  window.__log = log;
+  var realFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    var p = realFetch.apply(this, arguments);
+    if (String(url).indexOf('publicChatbotPing') !== -1) {
+      var sent = {};
+      try { sent = JSON.parse(opts.body); } catch (e) { sent = {}; }
+      p.then(function (res) {
+        res.clone().json().then(function (b) {
+          var d = (b && b.data) || {};
+          var who = d.user ? ('SIGNED IN as "' + d.user.name + '" (contact ' + d.user.id + ')') : (d.session ? 'SESSION kept (no new sign-in)' : 'ANONYMOUS');
+          log('ping http ' + res.status + ' | sent token: ' + (sent.user_data ? 'yes' : 'no') + ', sent session cookie: ' + (sent.session ? 'yes' : 'no') +
+            ' -> ' + who + (d.session ? ', session ok, max-age ' + (d.cookie_max_age && d.cookie_max_age.session) + ' s' : ', no session'));
+          var st = document.getElementById('status');
+          if (st) { st.textContent = d.session ? (d.user ? 'Signed in: ' + d.user.name : 'Signed in (existing session)') : 'Not signed in'; st.className = d.session ? 'in' : 'out'; }
+        }).catch(function () { log('ping http ' + res.status + ' (no JSON body)'); });
+      }).catch(function (e) { log('ping failed: ' + e); });
+    }
+    return p;
+  };
+  window.upsalesChat = window.upsalesChat || function () { (window.upsalesChat.q = window.upsalesChat.q || []).push(arguments); };
+  if (token) {
+    var opts = { identity: token };
+    if (sd) opts.sessionDuration = Number(sd);
+    upsalesChat('boot', opts);
+    window.__booted = 'with token' + (sd ? ', sessionDuration ' + sd + ' ms' : '');
+  } else {
+    window.__booted = 'no token (page load only)';
+  }
+})();
+</script>
+</head>
+<body>
+<h1>Chatbot sign-in test page</h1>
+<p>Internal test page for the Upsales website chatbot (sign-in mode). Test people and test data only.</p>
+<div id="status">Waiting for the chat…</div>
+<p id="boot"></p>
+<h2>Sign in with a test token</h2>
+<textarea id="tok" placeholder="Paste a short-lived test token"></textarea><br>
+<button onclick="var t=document.getElementById('tok').value.trim(); if(t){upsalesChat('boot',{identity:t}); __log('boot() with pasted token');}">Sign in</button>
+<button onclick="upsalesChat('shutdown'); __log('shutdown() called'); document.getElementById('status').textContent='Signed out';">Sign out (shutdown)</button>
+<h2>Ping log</h2>
+<div id="log"></div>
+<script>document.getElementById('boot').textContent = 'This load: ' + window.__booted; window.__log('page loaded: ' + window.__booted);</script>
+<script src="https://img.upsales.com/CJKyD7bwrE7sH4TWTZcG2g==/w_b1-1-5-1-d1f6b82b4e27ae809feea9eafaa7b4b9.js" async></script>
+</body>
+</html>
